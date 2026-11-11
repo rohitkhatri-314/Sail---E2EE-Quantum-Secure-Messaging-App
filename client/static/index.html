@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sail</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  #messages { scroll-behavior: smooth; }
+  .msg-bubble { max-width: 68%; word-break: break-word; }
+  .typing-dots span {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #9ca3af; margin: 0 2px;
+    animation: bounce 1.3s infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: .2s; }
+  .typing-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+</style>
+</head>
+<body class="bg-gray-100 h-screen flex items-center justify-center">
+
+<!-- ════════════════════  LOGIN SCREEN  ════════════════════ -->
+<div id="login-screen" class="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8 space-y-6">
+  <div class="text-center">
+    <div class="inline-flex items-center justify-center w-14 h-14 bg-green-500 rounded-full mb-3">
+      <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+    </div>
+    <h1 class="text-2xl font-bold text-gray-800">Sail</h1>
+    <p class="text-gray-400 text-sm mt-1">Secure · Private · Simple</p>
+  </div>
+
+  <div class="space-y-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-600 mb-1">Username</label>
+      <input id="login-user" type="text" autocomplete="username"
+             placeholder="Enter your username"
+             class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-gray-50">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-600 mb-1">Password</label>
+      <input id="login-pass" type="password" autocomplete="current-password"
+             placeholder="Enter your password"
+             class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-gray-50">
+    </div>
+    <div id="login-error" class="hidden text-red-500 text-sm text-center"></div>
+    <button onclick="doLogin()"
+            class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-xl transition text-sm shadow-sm">
+      Sign In
+    </button>
+  </div>
+  <p class="text-center text-xs text-gray-400">Try <strong>alice / alice</strong> or <strong>bob / bob</strong></p>
+</div>
+
+<!-- ════════════════════  CHAT SCREEN  ════════════════════ -->
+<div id="chat-screen" class="hidden w-full h-screen flex">
+
+  <!-- Left sidebar: conversation list -->
+  <aside class="w-80 bg-white border-r border-gray-200 flex flex-col">
+    <!-- Sidebar Header -->
+    <div class="bg-green-600 text-white px-5 py-4 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <div id="me-avatar" class="w-10 h-10 rounded-full bg-white/30 flex items-center justify-center font-bold text-lg uppercase">A</div>
+        <span id="me-name" class="font-semibold text-sm">Alice</span>
+      </div>
+      <button onclick="doLogout()" title="Sign out"
+              class="text-white/70 hover:text-white transition text-xs flex items-center gap-1">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+      </button>
+    </div>
+
+    <!-- Search bar -->
+    <div class="px-4 py-3 border-b border-gray-100">
+      <div class="bg-gray-100 rounded-full flex items-center gap-2 px-3 py-2">
+        <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 0 5 11a6 6 0 0 0 12 0z"/></svg>
+        <input class="bg-transparent text-sm flex-1 outline-none text-gray-600 placeholder-gray-400" placeholder="Search contacts">
+      </div>
+    </div>
+
+    <!-- Contact List -->
+    <div class="flex-1 overflow-y-auto" id="contact-list">
+      <!-- Populated by JS -->
+    </div>
+  </aside>
+
+  <!-- Right: Chat panel -->
+  <div class="flex-1 flex flex-col bg-[#efeae2]" id="chat-panel">
+
+    <!-- Empty state -->
+    <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-gray-500 space-y-3">
+      <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+        <svg class="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </div>
+      <p class="text-lg font-medium text-gray-600">Select a contact to start chatting</p>
+      <p class="text-sm text-gray-400">Your messages are end-to-end encrypted</p>
+    </div>
+
+    <!-- Active chat -->
+    <div id="active-chat" class="hidden flex-1 flex flex-col">
+      <!-- Chat Header -->
+      <div class="bg-green-600 text-white px-5 py-3.5 flex items-center justify-between shadow shrink-0">
+        <div class="flex items-center gap-3">
+          <div id="peer-avatar" class="w-10 h-10 rounded-full bg-white/30 flex items-center justify-center font-bold text-lg uppercase">B</div>
+          <div>
+            <div id="peer-name" class="font-semibold text-sm">Bob</div>
+            <div id="peer-status" class="text-xs text-green-100">🔒 End-to-end encrypted</div>
+          </div>
+        </div>
+        <!-- Lock / verify icon -->
+        <button onclick="showSafety()" title="Verify security"
+                class="text-white/80 hover:text-white transition" >
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        </button>
+      </div>
+
+      <!-- Messages -->
+      <div class="flex-1 overflow-y-auto px-4 py-4 space-y-1" id="messages">
+        <!-- Messages injected here -->
+      </div>
+
+      <!-- Composer -->
+      <div class="bg-white px-3 py-3 flex items-end gap-2 border-t border-gray-200 shrink-0">
+        <div class="flex-1 bg-gray-100 rounded-2xl px-4 py-2 min-h-[42px] max-h-32 overflow-y-auto">
+          <textarea id="msg-input" rows="1"
+                    placeholder="Message"
+                    class="w-full bg-transparent resize-none outline-none text-sm text-gray-800 placeholder-gray-400 leading-5"
+                    oninput="autoResize(this)"
+                    onkeydown="handleEnter(event)"></textarea>
+        </div>
+        <button id="send-btn" onclick="sendMessage()"
+                class="w-11 h-11 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center transition shrink-0 shadow">
+          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════  SAFETY NUMBERS MODAL  ════════════════════ -->
+<div id="safety-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+        <svg class="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      </div>
+      <div>
+        <h3 class="font-semibold text-gray-800 text-sm">Security Verification</h3>
+        <p class="text-xs text-gray-400">Confirm your chat is secure</p>
+      </div>
+    </div>
+    <p class="text-xs text-gray-500 leading-relaxed">
+      Compare these numbers with <strong id="safety-peer-label">your contact</strong> in person or on another channel.
+      If they match, your conversation is fully secure and private.
+    </p>
+    <div class="bg-gray-50 rounded-xl p-4 border border-gray-200 text-center">
+      <div id="safety-num" class="font-mono text-sm font-semibold text-gray-700 tracking-wider leading-7 break-all">Loading…</div>
+    </div>
+    <button onclick="closeSafety()"
+            class="w-full bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold transition">Done</button>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
