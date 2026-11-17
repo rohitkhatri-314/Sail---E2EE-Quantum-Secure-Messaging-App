@@ -57,8 +57,11 @@ function resetToLogin() {
   currentPeer = null;
   authToken = null;
   sessionStorage.removeItem("sail_token");
+
   document.getElementById("chat-screen").classList.add("hidden");
   document.getElementById("login-screen").classList.remove("hidden");
+  document.getElementById("empty-state").classList.remove("hidden");
+  document.getElementById("active-chat").classList.add("hidden");
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
@@ -73,10 +76,27 @@ window.addEventListener("DOMContentLoaded", async () => {
       authToken = null;
     }
   }
-  // keyboard shortcut: press Enter to log in
-  document.getElementById("login-pass").addEventListener("keydown", e => {
-    if (e.key === "Enter") doLogin();
-  });
+
+  // Keyboard shortcut: press Enter in password field to log in
+  const passInput = document.getElementById("login-pass");
+  if (passInput) {
+    passInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") doLogin();
+    });
+  }
+
+  const userInput = document.getElementById("login-user");
+  if (userInput) {
+    userInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        if (passInput && passInput.value) {
+          doLogin();
+        } else if (passInput) {
+          passInput.focus();
+        }
+      }
+    });
+  }
 });
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -86,21 +106,32 @@ async function doLogin() {
   const errEl    = document.getElementById("login-error");
   errEl.classList.add("hidden");
 
-  const res = await fetch("/api/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password })
-  });
-
-  if (!res.ok) {
-    errEl.textContent = "Incorrect username or password.";
+  if (!username || !password) {
+    errEl.textContent = "Please enter both username and password.";
     errEl.classList.remove("hidden");
     return;
   }
-  const data = await res.json();
-  authToken = data.token;
-  sessionStorage.setItem("sail_token", authToken);
-  await enterChat(data.username);
+
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+
+    if (!res.ok) {
+      errEl.textContent = "Incorrect username or password.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const data = await res.json();
+    authToken = data.token;
+    sessionStorage.setItem("sail_token", authToken);
+    await enterChat(data.username);
+  } catch (err) {
+    errEl.textContent = "Connection error. Make sure the server is running.";
+    errEl.classList.remove("hidden");
+  }
 }
 
 async function doLogout() {
@@ -112,6 +143,7 @@ async function doLogout() {
 async function enterChat(username) {
   currentUser = username;
   localMessages = loadStoredMessages(username);
+
   document.getElementById("login-screen").classList.add("hidden");
   document.getElementById("chat-screen").classList.remove("hidden");
   document.getElementById("me-name").textContent = capitalize(username);
@@ -138,26 +170,26 @@ async function loadContacts() {
     if (!localMessages[peer]) localMessages[peer] = [];
     const el = document.createElement("div");
     el.id = `contact-${peer}`;
-    el.className = "flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-violet-50 border-b border-slate-100 transition";
+    el.className = "contact-row flex items-center gap-3.5 px-3.5 py-3 rounded-2xl cursor-pointer border-b border-white/5 transition mb-1";
     el.onclick = () => openConversation(peer);
 
     const prev = previews[peer];
-    const prevText = prev ? prev.text : "🔒 Encrypted";
+    const prevText = prev ? prev.text : "🔒 Quantum Encrypted";
     const prevTs = prev ? formatTime(prev.ts) : "";
     const unread = unreadCounts[peer] || 0;
 
     el.innerHTML = `
-      <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-500 flex items-center justify-center text-white font-bold text-lg uppercase shrink-0 shadow-sm shadow-violet-200">
+      <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold text-base uppercase shrink-0 shadow-md" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)">
         ${peer[0]}
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex justify-between items-center">
-          <span class="font-semibold text-sm text-slate-800">${capitalize(peer)}</span>
-          <span class="text-[11px] text-slate-400 contact-ts" id="ts-${peer}">${prevTs}</span>
+          <span class="font-semibold text-sm text-white/90">${capitalize(peer)}</span>
+          <span class="text-[11px] contact-ts text-purple-300/50" id="ts-${peer}">${prevTs}</span>
         </div>
         <div class="flex justify-between items-center mt-0.5">
-          <div class="text-xs text-slate-400 truncate contact-preview" id="preview-${peer}">${prevText.length > 35 ? escHtml(prevText.slice(0, 35)) + "…" : escHtml(prevText)}</div>
-          <span id="badge-${peer}" class="${unread > 0 ? "" : "hidden"} ml-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">${unread}</span>
+          <div class="text-xs truncate contact-preview text-purple-200/60 font-light" id="preview-${peer}">${prevText.length > 32 ? escHtml(prevText.slice(0, 32)) + "…" : escHtml(prevText)}</div>
+          <span id="badge-${peer}" class="${unread > 0 ? "" : "hidden"} ml-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[18px] text-center shadow-md animate-badge-pop" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)">${unread}</span>
         </div>
       </div>
     `;
@@ -165,10 +197,22 @@ async function loadContacts() {
   });
 }
 
+function filterContacts(query) {
+  const q = (query || "").trim().toLowerCase();
+  document.querySelectorAll("#contact-list > div").forEach(el => {
+    const peer = el.id.replace("contact-", "");
+    if (!q || peer.toLowerCase().includes(q)) {
+      el.style.display = "flex";
+    } else {
+      el.style.display = "none";
+    }
+  });
+}
+
 function updateContactPreview(peer, text, ts) {
   const previewEl = document.getElementById(`preview-${peer}`);
   const tsEl      = document.getElementById(`ts-${peer}`);
-  if (previewEl) previewEl.textContent = text.length > 35 ? text.slice(0, 35) + "…" : text;
+  if (previewEl) previewEl.textContent = text.length > 32 ? text.slice(0, 32) + "…" : text;
   if (tsEl) tsEl.textContent = formatTime(ts);
 }
 
@@ -192,13 +236,14 @@ async function openConversation(peer) {
 
   // Update sidebar highlight
   document.querySelectorAll("#contact-list > div").forEach(el => {
-    el.classList.remove("bg-violet-100", "border-violet-200");
+    el.classList.remove("active");
   });
   const contactEl = document.getElementById(`contact-${peer}`);
-  if (contactEl) contactEl.classList.add("bg-violet-50", "border-violet-200");
+  if (contactEl) contactEl.classList.add("active");
 
   document.getElementById("empty-state").classList.add("hidden");
-  document.getElementById("active-chat").classList.remove("hidden");
+  const activeChat = document.getElementById("active-chat");
+  activeChat.classList.remove("hidden");
   document.getElementById("peer-name").textContent = capitalize(peer);
   document.getElementById("peer-avatar").textContent = peer[0].toUpperCase();
 
@@ -215,7 +260,8 @@ async function openConversation(peer) {
   }
 
   renderMessages(peer);
-  document.getElementById("msg-input").focus();
+  const input = document.getElementById("msg-input");
+  if (input) input.focus();
 }
 
 // ─── Render message list ───────────────────────────────────────────────────────
@@ -233,19 +279,19 @@ function appendBubble(msg) {
   const isMe = msg.sender === currentUser;
 
   const wrapper = document.createElement("div");
-  wrapper.className = `flex ${isMe ? "justify-end" : "justify-start"} mb-0.5`;
+  wrapper.className = `flex ${isMe ? "justify-end" : "justify-start"} mb-1 ${isMe ? "bubble-sent" : "bubble-recv"}`;
 
   const bubble = document.createElement("div");
-  bubble.className = `msg-bubble px-3.5 py-2 rounded-2xl text-sm shadow-sm ${
+  bubble.className = `msg-bubble px-4 py-2.5 rounded-2xl text-sm ${
     isMe
-      ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-tr-sm shadow-violet-100"
-      : "bg-white text-slate-800 rounded-tl-sm border border-violet-100/60"
+      ? "bubble-sent-inner text-white rounded-br-sm"
+      : "bubble-recv-inner text-slate-800 rounded-bl-sm"
   }`;
 
   bubble.innerHTML = `
-    <div class="leading-snug">${escHtml(msg.text)}</div>
-    <div class="flex items-center justify-end gap-1 mt-0.5">
-      <span class="text-[10px] ${isMe ? "text-violet-200" : "text-slate-400"}">${formatTime(msg.ts)}</span>
+    <div class="leading-relaxed select-text">${escHtml(msg.text)}</div>
+    <div class="flex items-center justify-end gap-1.5 mt-1 select-none">
+      <span class="text-[10px] ${isMe ? "text-purple-200/80 font-light" : "text-slate-400 font-light"}">${formatTime(msg.ts)}</span>
       ${isMe ? statusIcon(msg.status) : ""}
     </div>
   `;
@@ -257,10 +303,10 @@ function appendBubble(msg) {
 
 function statusIcon(status) {
   if (status === "sending") {
-    return `<svg class="w-3.5 h-3.5 text-violet-300" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+    return `<svg class="w-3.5 h-3.5 text-purple-300" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
   }
-  // delivered / read: double tick in light violet
-  return `<svg class="w-4 h-4 text-violet-200" fill="currentColor" viewBox="0 0 24 24"><path d="M18 7l-1.41-1.42-6.34 6.34 1.41 1.41L18 7zm4.24-1.42L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.42zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>`;
+  // delivered / read: double check mark in light lavender
+  return `<svg class="w-4 h-4 text-purple-200" fill="currentColor" viewBox="0 0 24 24"><path d="M18 7l-1.41-1.42-6.34 6.34 1.41 1.41L18 7zm4.24-1.42L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.42zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>`;
 }
 
 // ─── Send ─────────────────────────────────────────────────────────────────────
@@ -388,29 +434,74 @@ async function showSafety() {
   const res = await apiFetch(`/api/safety-number/${currentPeer}`);
   if (res.ok) {
     const { safety_number } = await res.json();
-    document.getElementById("safety-num").textContent = safety_number;
+    // Format into clean 5-digit groups for easy verification if numeric
+    document.getElementById("safety-num").textContent = formatSafetyNumber(safety_number);
   } else {
     document.getElementById("safety-num").textContent = "Send a message first to establish a secure session.";
   }
 }
+
+function formatSafetyNumber(raw) {
+  if (!raw) return "";
+  const cleaned = raw.replace(/\s+/g, "");
+  // If it's a long string of digits or hex, split into blocks of 5 or 6 characters
+  if (cleaned.length >= 20) {
+    return cleaned.match(/.{1,5}/g).join("  ");
+  }
+  return raw;
+}
+
+function copySafetyNumber() {
+  const numEl = document.getElementById("safety-num");
+  const text = numEl ? numEl.textContent.trim() : "";
+  if (!text || text === "Loading…" || text.startsWith("Send a message")) return;
+
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("copy-safety-btn");
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = `<span class="text-emerald-600 font-semibold flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg> Copied!</span>`;
+      setTimeout(() => { btn.innerHTML = orig; }, 2000);
+    }
+  }).catch(() => {});
+}
+
 function closeSafety() {
   document.getElementById("safety-modal").classList.add("hidden");
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-function escHtml(s) {
-  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-          .replace(/"/g,"&quot;").replace(/\n/g,"<br>");
+function insertEmoji(emoji) {
+  const input = document.getElementById("msg-input");
+  if (!input) return;
+  input.value += emoji;
+  input.focus();
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function capitalize(s) {
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/\n/g, "<br>");
+}
+
 function formatTime(ts) {
+  if (!ts) return "";
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
+
 function autoResize(el) {
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, 120) + "px";
 }
+
 function handleEnter(e) {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 }

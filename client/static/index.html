@@ -3,163 +3,477 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sail</title>
+<title>Sail — Quantum-Secure Messaging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-  #messages { scroll-behavior: smooth; }
-  .msg-bubble { max-width: 68%; word-break: break-word; }
-  .typing-dots span {
-    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: #a78bfa; margin: 0 2px;
-    animation: bounce 1.3s infinite;
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'monospace']
+        },
+        colors: {
+          sail: {
+            50:  '#f5f3ff',
+            100: '#ede9fe',
+            200: '#ddd6fe',
+            300: '#c4b5fd',
+            400: '#a78bfa',
+            500: '#8b5cf6',
+            600: '#7c3aed',
+            700: '#6d28d9',
+            800: '#5b21b6',
+            900: '#4c1d95',
+            950: '#2e1065',
+          }
+        },
+        animation: {
+          'fade-up': 'fadeUp 0.35s cubic-bezier(.22,.68,0,1.2) both',
+          'fade-in': 'fadeIn 0.25s ease both',
+          'scale-in': 'scaleIn 0.35s cubic-bezier(.22,.68,0,1.2) both',
+          'slide-left': 'slideLeft 0.28s cubic-bezier(.22,.68,0,1.15) both',
+          'slide-right': 'slideRight 0.28s cubic-bezier(.22,.68,0,1.15) both',
+          'pulse-dot': 'pulseDot 2s ease-in-out infinite',
+          'badge-pop': 'badgePop 0.3s cubic-bezier(.22,.68,0,1.4) both',
+        },
+        keyframes: {
+          fadeUp:    { from: { opacity: 0, transform: 'translateY(16px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+          fadeIn:    { from: { opacity: 0 }, to: { opacity: 1 } },
+          scaleIn:   { from: { opacity: 0, transform: 'scale(0.92)' }, to: { opacity: 1, transform: 'scale(1)' } },
+          slideLeft: { from: { opacity: 0, transform: 'translateX(24px) scale(0.97)' }, to: { opacity: 1, transform: 'translateX(0) scale(1)' } },
+          slideRight:{ from: { opacity: 0, transform: 'translateX(-24px) scale(0.97)' }, to: { opacity: 1, transform: 'translateX(0) scale(1)' } },
+          pulseDot:  { '0%,100%': { transform: 'scale(1)', opacity: 1 }, '50%': { transform: 'scale(1.35)', opacity: 0.7 } },
+          badgePop:  { from: { opacity: 0, transform: 'scale(0.3)' }, to: { opacity: 1, transform: 'scale(1)' } },
+        }
+      }
+    }
   }
-  .typing-dots span:nth-child(2) { animation-delay: .2s; }
-  .typing-dots span:nth-child(3) { animation-delay: .4s; }
-  @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Critical: ensure hidden elements are strictly hidden */
+  .hidden, [hidden], #login-screen.hidden, #chat-screen.hidden, #empty-state.hidden, #active-chat.hidden, #safety-modal.hidden {
+    display: none !important;
+  }
+
+  /* Custom Slim Scrollbars */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(167, 139, 250, 0.3); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(167, 139, 250, 0.6); }
+
+  /* Message Canvas & Bubbles */
+  #messages {
+    background-color: #f7f6fc;
+    background-image: radial-gradient(circle, #e2dcf7 1.25px, transparent 1.25px);
+    background-size: 24px 24px;
+    scroll-behavior: smooth;
+    user-select: text;
+  }
+
+  .msg-bubble {
+    max-width: 68%;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+
+  .bubble-sent {
+    animation: slideLeft 0.28s cubic-bezier(.22,.68,0,1.15) both;
+  }
+
+  .bubble-recv {
+    animation: slideRight 0.28s cubic-bezier(.22,.68,0,1.15) both;
+  }
+
+  .bubble-sent-inner {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    box-shadow: 0 4px 14px -2px rgba(109, 40, 217, 0.35);
+  }
+
+  .bubble-recv-inner {
+    background: #ffffff;
+    border: 1px solid #eeeaf7;
+    box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Animated Login Gradient */
+  #login-screen {
+    background: linear-gradient(135deg, #1b0a33 0%, #32115e 40%, #581c87 75%, #6d28d9 100%);
+    background-size: 300% 300%;
+    animation: gradientShift 10s ease infinite;
+  }
+  @keyframes gradientShift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Glassmorphism */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 24px 48px -12px rgba(15, 6, 32, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  }
+
+  /* Sidebar Design */
+  #sidebar {
+    background: #140a24;
+  }
+
+  .contact-row {
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 3px solid transparent;
+  }
+
+  .contact-row:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .contact-row.active {
+    background: linear-gradient(90deg, rgba(124, 58, 237, 0.32) 0%, rgba(139, 92, 246, 0.12) 100%);
+    border-left: 3px solid #a78bfa;
+  }
+
+  /* Header Gradients */
+  .sail-header {
+    background: linear-gradient(135deg, #241147 0%, #43197a 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* Security Shimmer Badge */
+  .enc-shimmer {
+    background: linear-gradient(90deg, rgba(167,139,250,0.12), rgba(196,181,253,0.25), rgba(167,139,250,0.12));
+    background-size: 200% 100%;
+    animation: shimmer 3.5s ease infinite;
+  }
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Send Button Micro-interaction */
+  #send-btn {
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+  }
+  #send-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px -2px rgba(124, 58, 237, 0.5);
+  }
+  #send-btn:active {
+    transform: scale(0.94);
+  }
+
+  /* Input Field Focus Transition */
+  .composer-input-wrap {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .composer-input-wrap:focus-within {
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.4), 0 4px 12px -2px rgba(124, 58, 237, 0.12);
+    border-color: #8b5cf6;
+    background-color: #ffffff;
+  }
 </style>
 </head>
-<body class="bg-slate-100 h-screen flex items-center justify-center">
+<body class="h-screen w-screen overflow-hidden bg-slate-900">
 
-<!-- ════════════════════  LOGIN SCREEN  ════════════════════ -->
-<div id="login-screen" class="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8 space-y-6 border border-violet-100">
-  <div class="text-center">
-    <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-tr from-violet-600 to-purple-500 rounded-2xl shadow-md shadow-violet-200 mb-3">
-      <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-    </div>
-    <h1 class="text-2xl font-bold bg-gradient-to-r from-violet-700 to-purple-600 bg-clip-text text-transparent">Sail</h1>
-    <p class="text-slate-400 text-sm mt-1">Quantum-Secure · End-to-End Encrypted</p>
-  </div>
+<!-- ═══════════════════════  LOGIN SCREEN  ═══════════════════════════ -->
+<div id="login-screen" class="fixed inset-0 flex items-center justify-center p-4 z-50">
 
-  <div class="space-y-4">
-    <div>
-      <label class="block text-sm font-medium text-slate-600 mb-1">Username</label>
-      <input id="login-user" type="text" autocomplete="username"
-             placeholder="Enter your username"
-             class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 bg-slate-50">
-    </div>
-    <div>
-      <label class="block text-sm font-medium text-slate-600 mb-1">Password</label>
-      <input id="login-pass" type="password" autocomplete="current-password"
-             placeholder="Enter your password"
-             class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 bg-slate-50">
-    </div>
-    <div id="login-error" class="hidden text-rose-500 text-sm text-center"></div>
-    <button onclick="doLogin()"
-            class="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold py-3 rounded-xl transition text-sm shadow-md shadow-violet-200">
-      Sign In
-    </button>
-  </div>
-  <p class="text-center text-xs text-slate-400">Try <strong>alice / alice</strong> or <strong>bob / bob</strong></p>
-</div>
+  <!-- Ambient Glowing Orbs -->
+  <div class="absolute top-[12%] left-[18%] w-80 h-80 bg-purple-500/25 rounded-full blur-3xl pointer-events-none"></div>
+  <div class="absolute bottom-[16%] right-[16%] w-96 h-96 bg-violet-600/25 rounded-full blur-3xl pointer-events-none"></div>
+  <div class="absolute top-[55%] left-[8%] w-60 h-60 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
-<!-- ════════════════════  CHAT SCREEN  ════════════════════ -->
-<div id="chat-screen" class="hidden w-full h-screen flex">
+  <!-- Login Card -->
+  <div class="glass-card rounded-3xl p-8 sm:p-9 w-full max-w-sm space-y-6 animate-scale-in relative z-10">
 
-  <!-- Left sidebar: conversation list -->
-  <aside class="w-80 bg-white border-r border-slate-200 flex flex-col">
-    <!-- Sidebar Header -->
-    <div class="bg-gradient-to-r from-violet-700 to-purple-700 text-white px-5 py-4 flex items-center justify-between shrink-0 shadow-sm">
-      <div class="flex items-center gap-3">
-        <div id="me-avatar" class="w-10 h-10 rounded-full bg-white/20 border border-white/30 flex items-center justify-center font-bold text-lg uppercase shadow-sm">A</div>
-        <span id="me-name" class="font-semibold text-sm">Alice</span>
+    <!-- Logo & Title -->
+    <div class="text-center space-y-3">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-white/20 to-white/5 border border-white/25 shadow-xl shadow-purple-950/40">
+        <svg class="w-9 h-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"/>
+        </svg>
       </div>
-      <button onclick="doLogout()" title="Sign out"
-              class="text-violet-200 hover:text-white transition text-xs flex items-center gap-1">
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+      <div>
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">Sail</h1>
+        <p class="text-purple-200/80 text-xs sm:text-sm mt-1 font-light tracking-wide">Quantum-Secure · End-to-End Encrypted</p>
+      </div>
+    </div>
+
+    <!-- Security Protocol Pill -->
+    <div class="enc-shimmer rounded-2xl px-4 py-2.5 flex items-center justify-center gap-2 border border-purple-300/20 shadow-inner">
+      <svg class="w-4 h-4 text-purple-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+      </svg>
+      <span class="text-purple-200 text-xs font-medium tracking-wide">PQXDH + ML-KEM-768 Ratchet</span>
+    </div>
+
+    <!-- Form -->
+    <div class="space-y-3.5">
+      <div>
+        <label class="block text-purple-200/80 text-xs font-medium mb-1.5 pl-1">Username</label>
+        <input id="login-user" type="text" autocomplete="username"
+               placeholder="Enter your username"
+               class="w-full bg-white/10 border border-white/15 text-white placeholder-purple-300/50 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-purple-400 focus:bg-white/15 transition-all">
+      </div>
+      <div>
+        <label class="block text-purple-200/80 text-xs font-medium mb-1.5 pl-1">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password"
+               placeholder="Enter your password"
+               class="w-full bg-white/10 border border-white/15 text-white placeholder-purple-300/50 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-purple-400 focus:bg-white/15 transition-all">
+      </div>
+      <div id="login-error" class="hidden text-rose-300 text-xs text-center bg-rose-500/20 rounded-xl px-3 py-2 border border-rose-400/30"></div>
+      <button onclick="doLogin()"
+              class="w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500 hover:from-violet-600 hover:to-indigo-600 text-white font-semibold py-3.5 rounded-2xl transition-all duration-200 text-sm shadow-lg shadow-purple-950/50 active:scale-[0.98]">
+        Sign In
       </button>
     </div>
 
-    <!-- Search bar -->
-    <div class="px-4 py-3 border-b border-slate-100">
-      <div class="bg-slate-100 rounded-full flex items-center gap-2 px-3 py-2">
-        <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 0 5 11a6 6 0 0 0 12 0z"/></svg>
-        <input class="bg-transparent text-sm flex-1 outline-none text-slate-600 placeholder-slate-400" placeholder="Search contacts">
+    <p class="text-center text-xs text-purple-300/60 pt-1">
+      Demo accounts: <span class="text-purple-200 font-semibold">alice / alice</span> or <span class="text-purple-200 font-semibold">bob / bob</span>
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════  CHAT SCREEN  ═══════════════════════════ -->
+<div id="chat-screen" class="hidden w-screen h-screen flex overflow-hidden">
+
+  <!-- ─── SIDEBAR ─────────────────────────────────────────────────── -->
+  <aside id="sidebar" class="w-80 flex flex-col shrink-0 border-r border-white/5 relative z-20" style="min-width: 290px; max-width: 320px;">
+
+    <!-- Sidebar User Header -->
+    <div class="sail-header px-5 py-4 flex items-center justify-between shrink-0 shadow-md">
+      <div class="flex items-center gap-3.5">
+        <div class="relative">
+          <div id="me-avatar" class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-violet-500 border border-white/20 flex items-center justify-center font-bold text-lg uppercase text-white shadow-lg">A</div>
+          <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 rounded-full border-2 border-[#140a24] animate-pulse-dot" title="Active"></span>
+        </div>
+        <div>
+          <div id="me-name" class="font-semibold text-sm text-white tracking-wide">Alice</div>
+          <div class="text-purple-300/70 text-[11px] flex items-center gap-1 font-light">
+            <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block"></span>
+            <span>Online</span>
+          </div>
+        </div>
+      </div>
+      <button onclick="doLogout()" title="Sign out"
+              class="w-9 h-9 flex items-center justify-center rounded-xl text-purple-300/70 hover:text-white hover:bg-white/10 transition-all duration-150 active:scale-95">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- App Name & Security Badge -->
+    <div class="px-5 py-3 border-b border-white/5 shrink-0 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-white font-bold text-sm tracking-wide">Sail</span>
+        <span class="bg-purple-500/20 text-purple-300 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-purple-400/30">PQ-E2EE</span>
+      </div>
+      <span class="text-purple-400/50 text-[10px] tracking-wider uppercase font-mono">v2.0 PQ</span>
+    </div>
+
+    <!-- Search Box -->
+    <div class="px-4 py-3 shrink-0">
+      <div class="bg-white/5 border border-white/10 rounded-2xl flex items-center gap-2.5 px-3.5 py-2.5 focus-within:border-purple-400/50 focus-within:bg-white/10 transition-all">
+        <svg class="w-4 h-4 text-purple-400/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/>
+        </svg>
+        <input id="contact-search" oninput="filterContacts(this.value)"
+               class="bg-transparent text-sm flex-1 outline-none text-white/90 placeholder-purple-400/50 font-light"
+               placeholder="Search conversations">
       </div>
     </div>
 
-    <!-- Contact List -->
-    <div class="flex-1 overflow-y-auto" id="contact-list">
-      <!-- Populated by JS -->
+    <!-- Section Heading -->
+    <div class="px-5 py-2 shrink-0 flex justify-between items-center">
+      <span class="text-purple-400/50 text-[10px] font-bold uppercase tracking-widest">Conversations</span>
+    </div>
+
+    <!-- Contact List (Populated via JS) -->
+    <div class="flex-1 overflow-y-auto px-2 space-y-1" id="contact-list">
+      <!-- Populated dynamically -->
+    </div>
+
+    <!-- Sidebar Bottom Footer -->
+    <div class="px-5 py-3.5 border-t border-white/5 shrink-0 flex items-center justify-between text-purple-400/50 text-[11px]">
+      <div class="flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+        </svg>
+        <span>Encrypted with Kyber-768</span>
+      </div>
+      <span class="w-2 h-2 rounded-full bg-emerald-400/80"></span>
     </div>
   </aside>
 
-  <!-- Right: Chat panel -->
-  <div class="flex-1 flex flex-col bg-[#f5f3ff]" id="chat-panel">
+  <!-- ─── CHAT PANEL ───────────────────────────────────────────────── -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden relative" id="chat-panel">
 
-    <!-- Empty state -->
-    <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-slate-500 space-y-3">
-      <div class="w-20 h-20 bg-violet-100 rounded-2xl flex items-center justify-center shadow-inner">
-        <svg class="w-10 h-10 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+    <!-- Empty State (When no contact selected) -->
+    <div id="empty-state" class="flex-1 flex flex-col items-center justify-center p-8 bg-gradient-to-br from-purple-50/70 via-slate-50 to-indigo-50/40 animate-fade-in space-y-6">
+      <div class="relative">
+        <div class="w-24 h-24 rounded-3xl bg-gradient-to-tr from-purple-200/80 to-violet-100 flex items-center justify-center shadow-xl shadow-purple-200/50 border border-purple-200/60">
+          <svg class="w-12 h-12 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"/>
+          </svg>
+        </div>
+        <div class="absolute -top-2 -right-2 w-7 h-7 bg-gradient-to-br from-violet-600 to-purple-600 rounded-xl flex items-center justify-center shadow-md animate-bounce">
+          <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+          </svg>
+        </div>
       </div>
-      <p class="text-lg font-medium text-slate-700">Select a contact to start chatting</p>
-      <p class="text-sm text-slate-400">Your messages are end-to-end quantum-encrypted</p>
+      <div class="text-center max-w-sm space-y-2">
+        <h2 class="text-xl font-bold text-slate-800">Select a Conversation</h2>
+        <p class="text-sm text-slate-500 leading-relaxed font-light">
+          Your messages and cryptographic keys never leave your device unencrypted. Protected against classical and quantum computer interception.
+        </p>
+      </div>
+
+      <!-- Protocol Feature Badges -->
+      <div class="flex flex-wrap gap-2 justify-center max-w-md pt-2">
+        <span class="bg-white text-purple-700 text-xs font-medium px-3.5 py-1.5 rounded-full shadow-sm border border-purple-100 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-violet-500"></span> CRYSTALS-Kyber-768
+        </span>
+        <span class="bg-white text-purple-700 text-xs font-medium px-3.5 py-1.5 rounded-full shadow-sm border border-purple-100 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-indigo-500"></span> Double Ratchet
+        </span>
+        <span class="bg-white text-purple-700 text-xs font-medium px-3.5 py-1.5 rounded-full shadow-sm border border-purple-100 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-purple-500"></span> PQXDH Key Exchange
+        </span>
+        <span class="bg-white text-purple-700 text-xs font-medium px-3.5 py-1.5 rounded-full shadow-sm border border-purple-100 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> AES-256-GCM
+        </span>
+      </div>
     </div>
 
-    <!-- Active chat -->
-    <div id="active-chat" class="hidden flex-1 flex flex-col">
+    <!-- Active Chat View -->
+    <div id="active-chat" class="hidden flex-1 flex flex-col h-full overflow-hidden animate-fade-in">
+
       <!-- Chat Header -->
-      <div class="bg-gradient-to-r from-violet-700 to-purple-700 text-white px-5 py-3.5 flex items-center justify-between shadow shrink-0">
-        <div class="flex items-center gap-3">
-          <div id="peer-avatar" class="w-10 h-10 rounded-full bg-white/20 border border-white/30 flex items-center justify-center font-bold text-lg uppercase shadow-sm">B</div>
+      <header class="sail-header px-6 py-3.5 flex items-center justify-between shrink-0 shadow-md">
+        <div class="flex items-center gap-3.5">
+          <div class="relative">
+            <div id="peer-avatar" class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-500 to-indigo-500 border border-white/20 flex items-center justify-center font-bold text-base uppercase text-white shadow-md">B</div>
+            <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#241147]"></span>
+          </div>
           <div>
-            <div id="peer-name" class="font-semibold text-sm">Bob</div>
-            <div id="peer-status" class="text-xs text-violet-200 flex items-center gap-1">
-              <span>🔒 End-to-end encrypted</span>
+            <div id="peer-name" class="font-bold text-sm text-white tracking-wide">Bob</div>
+            <div id="peer-status" class="text-xs text-purple-200/80 flex items-center gap-1.5 font-light">
+              <svg class="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+              </svg>
+              <span>Quantum-encrypted session</span>
             </div>
           </div>
         </div>
-        <!-- Lock / verify icon -->
-        <button onclick="showSafety()" title="Verify security"
-                class="text-violet-200 hover:text-white transition p-1.5 rounded-lg hover:bg-white/10" >
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+
+        <!-- Security Verification Button -->
+        <button onclick="showSafety()" title="Verify safety numbers"
+                class="flex items-center gap-2 text-purple-100 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all duration-150 active:scale-95 shadow-sm">
+          <svg class="w-4 h-4 text-purple-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+          </svg>
+          <span>Verify Safety</span>
         </button>
+      </header>
+
+      <!-- Message Bubbles Scroll Area -->
+      <div class="flex-1 overflow-y-auto px-6 py-5 space-y-2 relative" id="messages">
+        <!-- Message bubbles dynamically appended here -->
       </div>
 
-      <!-- Messages -->
-      <div class="flex-1 overflow-y-auto px-4 py-4 space-y-1" id="messages">
-        <!-- Messages injected here -->
-      </div>
+      <!-- Composer Bar -->
+      <footer class="bg-white px-5 py-3.5 border-t border-purple-100/70 flex items-end gap-3 shrink-0 shadow-[0_-4px_24px_rgba(109,40,217,0.06)]">
 
-      <!-- Composer -->
-      <div class="bg-white px-3 py-3 flex items-end gap-2 border-t border-slate-200 shrink-0">
-        <div class="flex-1 bg-slate-100 rounded-2xl px-4 py-2 min-h-[42px] max-h-32 overflow-y-auto focus-within:ring-2 focus-within:ring-violet-400 transition">
+        <!-- Emoji Quick Picker Button -->
+        <button onclick="insertEmoji('🔒 ')" title="Insert secure badge"
+                class="w-10 h-10 flex items-center justify-center rounded-2xl text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all shrink-0 mb-0.5">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 0 1-6.364 0M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Z"/>
+          </svg>
+        </button>
+
+        <!-- Message Input Box -->
+        <div class="composer-input-wrap flex-1 bg-slate-50/90 border border-slate-200/90 rounded-2xl px-4 py-2.5 min-h-[44px] max-h-32 overflow-y-auto transition-all">
           <textarea id="msg-input" rows="1"
-                    placeholder="Message"
+                    placeholder="Type a quantum-secure message..."
                     class="w-full bg-transparent resize-none outline-none text-sm text-slate-800 placeholder-slate-400 leading-5"
                     oninput="autoResize(this)"
                     onkeydown="handleEnter(event)"></textarea>
         </div>
+
+        <!-- Send Button -->
         <button id="send-btn" onclick="sendMessage()"
-                class="w-11 h-11 bg-gradient-to-tr from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 rounded-full flex items-center justify-center transition shrink-0 shadow-md shadow-violet-200">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                class="w-11 h-11 bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-md shadow-purple-500/30">
+          <svg class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405Z"/>
+          </svg>
         </button>
-      </div>
+      </footer>
     </div>
-  </div>
+  </main>
 </div>
 
-<!-- ════════════════════  SAFETY NUMBERS MODAL  ════════════════════ -->
-<div id="safety-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-  <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 border border-violet-100">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-700">
-        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+<!-- ═══════════════════════  SAFETY NUMBERS MODAL  ═══════════════════ -->
+<div id="safety-modal" class="hidden fixed inset-0 bg-slate-950/65 backdrop-blur-md flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 sm:p-7 space-y-5 border border-purple-100 animate-scale-in">
+
+    <!-- Modal Header -->
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-purple-200 shrink-0">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+        </svg>
       </div>
       <div>
-        <h3 class="font-semibold text-slate-800 text-sm">Security Verification</h3>
-        <p class="text-xs text-slate-400">Confirm your chat is secure</p>
+        <h3 class="font-bold text-slate-800 text-base">Safety Verification</h3>
+        <p class="text-xs text-slate-400 mt-0.5">End-to-End Cryptographic Identity</p>
       </div>
     </div>
-    <p class="text-xs text-slate-500 leading-relaxed">
-      Compare these numbers with <strong id="safety-peer-label" class="text-violet-700">your contact</strong> in person or on another channel.
-      If they match, your conversation is fully secure and private.
+
+    <!-- Instructions -->
+    <p class="text-xs sm:text-sm text-slate-600 leading-relaxed bg-purple-50/60 rounded-2xl p-4 border border-purple-100/80">
+      Compare these numbers with <strong id="safety-peer-label" class="text-violet-700 font-semibold">your contact</strong> via another secure channel. If they match, your communication is mathematically immune to eavesdropping or man-in-the-middle attacks.
     </p>
-    <div class="bg-violet-50/50 rounded-xl p-4 border border-violet-100 text-center">
-      <div id="safety-num" class="font-mono text-sm font-semibold text-violet-900 tracking-wider leading-7 break-all">Loading…</div>
+
+    <!-- Fingerprint / Safety Number Block -->
+    <div class="bg-gradient-to-br from-slate-900 to-purple-950 rounded-2xl p-5 border border-purple-900/40 text-center space-y-2 shadow-inner">
+      <div class="text-[10px] text-purple-300 font-semibold uppercase tracking-widest">Post-Quantum Safety Fingerprint</div>
+      <div id="safety-num" class="font-mono text-xs sm:text-sm font-medium text-purple-100 tracking-wider leading-relaxed break-all select-all py-1">
+        Loading…
+      </div>
     </div>
-    <button onclick="closeSafety()"
-            class="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white py-2.5 rounded-xl text-sm font-semibold transition shadow-md shadow-violet-200">Done</button>
+
+    <!-- Actions -->
+    <div class="flex gap-3">
+      <button onclick="copySafetyNumber()" id="copy-safety-btn"
+              class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-2xl text-xs sm:text-sm font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"/>
+        </svg>
+        <span>Copy Fingerprint</span>
+      </button>
+      <button onclick="closeSafety()"
+              class="flex-1 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white py-3 rounded-2xl text-xs sm:text-sm font-semibold transition-all shadow-md shadow-purple-500/20 active:scale-[0.98]">
+        Done
+      </button>
+    </div>
   </div>
 </div>
 
