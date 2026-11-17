@@ -1,3 +1,4 @@
+// ─── State ────────────────────────────────────────────────────────────────────
 let currentUser  = null;
 let currentPeer  = null;
 let authToken    = sessionStorage.getItem("sail_token") || null;
@@ -6,6 +7,7 @@ let heartbeatId  = null;
 let receiveQueue = Promise.resolve();
 const unreadCounts = {};
 
+// Local persistent message store (localStorage)
 function getStorageKey(user) {
   return `sail_messages_${user}`;
 }
@@ -29,6 +31,7 @@ function saveStoredMessages(user, msgs) {
 
 let localMessages = {};
 
+// ─── API Helper (per-tab Bearer token, handles 401 cleanly) ───────────────────
 async function apiFetch(url, options = {}) {
   const headers = Object.assign({}, options.headers || {});
   if (authToken) {
@@ -36,6 +39,7 @@ async function apiFetch(url, options = {}) {
   }
   const res = await fetch(url, Object.assign({}, options, { headers }));
   if (res.status === 401 && currentUser) {
+    // Session expired (e.g., server restarted)
     resetToLogin();
   }
   return res;
@@ -57,6 +61,7 @@ function resetToLogin() {
   document.getElementById("login-screen").classList.remove("hidden");
 }
 
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", async () => {
   if (authToken) {
     const res = await apiFetch("/api/me").catch(() => null);
@@ -68,11 +73,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       authToken = null;
     }
   }
+  // keyboard shortcut: press Enter to log in
   document.getElementById("login-pass").addEventListener("keydown", e => {
     if (e.key === "Enter") doLogin();
   });
 });
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 async function doLogin() {
   const username = document.getElementById("login-user").value.trim().toLowerCase();
   const password = document.getElementById("login-pass").value;
@@ -101,6 +108,7 @@ async function doLogout() {
   resetToLogin();
 }
 
+// ─── Enter Chat (post-login) ───────────────────────────────────────────────────
 async function enterChat(username) {
   currentUser = username;
   localMessages = loadStoredMessages(username);
@@ -114,6 +122,7 @@ async function enterChat(username) {
   await syncPendingMessages();
 }
 
+// ─── Contacts ─────────────────────────────────────────────────────────────────
 async function loadContacts() {
   const res = await apiFetch("/api/users");
   if (!res.ok) return;
@@ -129,7 +138,7 @@ async function loadContacts() {
     if (!localMessages[peer]) localMessages[peer] = [];
     const el = document.createElement("div");
     el.id = `contact-${peer}`;
-    el.className = "flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-violet-100/50 transition duration-150";
+    el.className = "flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-violet-50 border-b border-slate-100 transition";
     el.onclick = () => openConversation(peer);
 
     const prev = previews[peer];
@@ -138,17 +147,17 @@ async function loadContacts() {
     const unread = unreadCounts[peer] || 0;
 
     el.innerHTML = `
-      <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-500 flex items-center justify-center text-white font-bold text-base uppercase shrink-0 shadow-md shadow-violet-500/20">
+      <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-500 flex items-center justify-center text-white font-bold text-lg uppercase shrink-0 shadow-sm shadow-violet-200">
         ${peer[0]}
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex justify-between items-center">
-          <span class="font-bold text-sm text-slate-800 tracking-tight">${capitalize(peer)}</span>
-          <span class="text-[10px] text-violet-500/80 font-medium contact-ts" id="ts-${peer}">${prevTs}</span>
+          <span class="font-semibold text-sm text-slate-800">${capitalize(peer)}</span>
+          <span class="text-[11px] text-slate-400 contact-ts" id="ts-${peer}">${prevTs}</span>
         </div>
-        <div class="flex justify-between items-center mt-1">
-          <div class="text-xs text-violet-700/60 font-medium truncate contact-preview" id="preview-${peer}">${prevText.length > 32 ? escHtml(prevText.slice(0, 32)) + "…" : escHtml(prevText)}</div>
-          <span id="badge-${peer}" class="${unread > 0 ? "" : "hidden"} ml-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-sm shadow-violet-500/30">${unread}</span>
+        <div class="flex justify-between items-center mt-0.5">
+          <div class="text-xs text-slate-400 truncate contact-preview" id="preview-${peer}">${prevText.length > 35 ? escHtml(prevText.slice(0, 35)) + "…" : escHtml(prevText)}</div>
+          <span id="badge-${peer}" class="${unread > 0 ? "" : "hidden"} ml-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">${unread}</span>
         </div>
       </div>
     `;
@@ -159,7 +168,7 @@ async function loadContacts() {
 function updateContactPreview(peer, text, ts) {
   const previewEl = document.getElementById(`preview-${peer}`);
   const tsEl      = document.getElementById(`ts-${peer}`);
-  if (previewEl) previewEl.textContent = text.length > 32 ? text.slice(0, 32) + "…" : text;
+  if (previewEl) previewEl.textContent = text.length > 35 ? text.slice(0, 35) + "…" : text;
   if (tsEl) tsEl.textContent = formatTime(ts);
 }
 
@@ -175,22 +184,25 @@ function updateUnreadBadge(peer) {
   }
 }
 
+// ─── Open conversation ─────────────────────────────────────────────────────────
 async function openConversation(peer) {
   currentPeer = peer;
   unreadCounts[peer] = 0;
   updateUnreadBadge(peer);
 
+  // Update sidebar highlight
   document.querySelectorAll("#contact-list > div").forEach(el => {
-    el.classList.remove("bg-violet-100", "border-l-4", "border-violet-600");
+    el.classList.remove("bg-violet-100", "border-violet-200");
   });
   const contactEl = document.getElementById(`contact-${peer}`);
-  if (contactEl) contactEl.classList.add("bg-violet-100/70", "border-l-4", "border-violet-600");
+  if (contactEl) contactEl.classList.add("bg-violet-50", "border-violet-200");
 
   document.getElementById("empty-state").classList.add("hidden");
   document.getElementById("active-chat").classList.remove("hidden");
   document.getElementById("peer-name").textContent = capitalize(peer);
   document.getElementById("peer-avatar").textContent = peer[0].toUpperCase();
 
+  // Load message history from SQLite database
   try {
     const res = await apiFetch(`/api/history/${peer}`);
     if (res.ok) {
@@ -206,6 +218,7 @@ async function openConversation(peer) {
   document.getElementById("msg-input").focus();
 }
 
+// ─── Render message list ───────────────────────────────────────────────────────
 function renderMessages(peer) {
   const container = document.getElementById("messages");
   container.innerHTML = "";
@@ -220,19 +233,19 @@ function appendBubble(msg) {
   const isMe = msg.sender === currentUser;
 
   const wrapper = document.createElement("div");
-  wrapper.className = `flex ${isMe ? "justify-end" : "justify-start"} mb-1`;
+  wrapper.className = `flex ${isMe ? "justify-end" : "justify-start"} mb-0.5`;
 
   const bubble = document.createElement("div");
-  bubble.className = `msg-bubble px-4 py-2.5 rounded-3xl text-sm leading-relaxed shadow-sm ${
+  bubble.className = `msg-bubble px-3.5 py-2 rounded-2xl text-sm shadow-sm ${
     isMe
-      ? "bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white rounded-tr-md shadow-violet-500/20"
-      : "bg-white text-slate-800 rounded-tl-md border border-violet-100 shadow-violet-100/50"
+      ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-tr-sm shadow-violet-100"
+      : "bg-white text-slate-800 rounded-tl-sm border border-violet-100/60"
   }`;
 
   bubble.innerHTML = `
-    <div class="leading-relaxed font-normal">${escHtml(msg.text)}</div>
-    <div class="flex items-center justify-end gap-1.5 mt-1">
-      <span class="text-[10px] ${isMe ? "text-violet-200" : "text-violet-400"} font-medium">${formatTime(msg.ts)}</span>
+    <div class="leading-snug">${escHtml(msg.text)}</div>
+    <div class="flex items-center justify-end gap-1 mt-0.5">
+      <span class="text-[10px] ${isMe ? "text-violet-200" : "text-slate-400"}">${formatTime(msg.ts)}</span>
       ${isMe ? statusIcon(msg.status) : ""}
     </div>
   `;
@@ -246,9 +259,11 @@ function statusIcon(status) {
   if (status === "sending") {
     return `<svg class="w-3.5 h-3.5 text-violet-300" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
   }
+  // delivered / read: double tick in light violet
   return `<svg class="w-4 h-4 text-violet-200" fill="currentColor" viewBox="0 0 24 24"><path d="M18 7l-1.41-1.42-6.34 6.34 1.41 1.41L18 7zm4.24-1.42L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.42zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>`;
 }
 
+// ─── Send ─────────────────────────────────────────────────────────────────────
 async function sendMessage() {
   const input = document.getElementById("msg-input");
   const text  = input.value.trim();
@@ -281,6 +296,7 @@ async function sendMessage() {
   }
 }
 
+// ─── WebSocket (incoming messages) ────────────────────────────────────────────
 function openWebSocket() {
   if (socket) {
     socket.onclose = null;
@@ -302,6 +318,7 @@ function openWebSocket() {
   socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type !== "envelope") return;
+    // Serialize decryption so rapid sequential packets never race PQXDH/Double Ratchet
     receiveQueue = receiveQueue
       .then(() => handleIncomingEnvelope(data.envelope))
       .catch(err => console.error("Incoming message queue error:", err));
@@ -361,6 +378,7 @@ function deliverToUI(sender, text, ts) {
   }
 }
 
+// ─── Safety Numbers Modal ─────────────────────────────────────────────────────
 async function showSafety() {
   if (!currentPeer) return;
   document.getElementById("safety-peer-label").textContent = capitalize(currentPeer);
@@ -375,11 +393,11 @@ async function showSafety() {
     document.getElementById("safety-num").textContent = "Send a message first to establish a secure session.";
   }
 }
-
 function closeSafety() {
   document.getElementById("safety-modal").classList.add("hidden");
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
