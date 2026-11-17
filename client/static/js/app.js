@@ -174,7 +174,7 @@ async function loadContacts() {
     el.onclick = () => openConversation(peer);
 
     const prev = previews[peer];
-    const prevText = prev ? prev.text : "🔒 Quantum Encrypted";
+    const prevText = prev ? prev.text : "🔒 Encrypted";
     const prevTs = prev ? formatTime(prev.ts) : "";
     const unread = unreadCounts[peer] || 0;
 
