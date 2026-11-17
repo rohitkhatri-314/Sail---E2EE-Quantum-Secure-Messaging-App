@@ -1,36 +1,15 @@
-"""
-Handwritten Cryptographic Algorithms for Sail Messenger
-=========================================================
-All base cryptographic algorithms written directly from mathematical specifications:
-  1. RFC 7748 Montgomery Curve25519 Diffie-Hellman scalar multiplication
-  2. RFC 8032 Edwards25519 digital signature algorithm (Ed25519)
-  3. RFC 2104 / FIPS 198 HMAC-SHA256
-  4. RFC 5869 HKDF-SHA256 (Extract & Expand)
-  5. FIPS 197 Advanced Encryption Standard (AES-256) block cipher
-  6. NIST SP 800-38D Galois/Counter Mode (AES-256-GCM) authenticated encryption
-  7. Post-Quantum Lattice Key Encapsulation (ML-KEM-768 / Kyber-768)
-
-No high-level cryptographic frameworks or protocol libraries are used.
-"""
-
 import os
 import hashlib
 from typing import Tuple
 
-# =====================================================================
-# 1. RFC 7748 Curve25519 Scalar Multiplication (Diffie-Hellman)
-# =====================================================================
-
 P_25519 = 2**255 - 19
-A24_25519 = 121665  # (486662 - 2) // 4
+A24_25519 = 121665
 U_BASE_POINT = (9).to_bytes(32, "little")
 
 def _mod_inv_25519(x: int) -> int:
-    """Modular inverse in GF(2^255 - 19) via Fermat's Little Theorem."""
     return pow(x, P_25519 - 2, P_25519)
 
 def _clamp_scalar(scalar_bytes: bytes) -> int:
-    """RFC 7748 bit clamping for Curve25519 private keys."""
     raw = bytearray(scalar_bytes[:32])
     raw[0] &= 248
     raw[31] &= 127
@@ -38,10 +17,6 @@ def _clamp_scalar(scalar_bytes: bytes) -> int:
     return int.from_bytes(raw, "little")
 
 def curve25519_scalarmult(scalar_bytes: bytes, u_bytes: bytes) -> bytes:
-    """
-    Montgomery Ladder scalar multiplication on Curve25519: y^2 = x^3 + 486662*x^2 + x.
-    Computes X25519(k, u).
-    """
     k = _clamp_scalar(scalar_bytes)
     u = int.from_bytes(u_bytes[:32], "little") % P_25519
 
@@ -58,7 +33,6 @@ def curve25519_scalarmult(scalar_bytes: bytes, u_bytes: bytes) -> bytes:
             z2, z3 = z3, z2
         swap = k_bit
 
-        # Differential addition and point doubling in projective coords
         a_sum = (x2 + z2) % P_25519
         aa = (a_sum * a_sum) % P_25519
         b_diff = (x2 - z2) % P_25519
@@ -83,19 +57,12 @@ def curve25519_scalarmult(scalar_bytes: bytes, u_bytes: bytes) -> bytes:
     return result.to_bytes(32, "little")
 
 def generate_x25519_keypair() -> Tuple[bytes, bytes]:
-    """Generates an X25519 keypair. Returns (public_key_32B, private_key_32B)."""
     priv = os.urandom(32)
     pub = curve25519_scalarmult(priv, U_BASE_POINT)
     return pub, priv
 
 def x25519_diffie_hellman(private_bytes: bytes, public_bytes: bytes) -> bytes:
-    """Performs scalar multiplication DH(priv, pub). Returns 32-byte shared secret."""
     return curve25519_scalarmult(private_bytes, public_bytes)
-
-
-# =====================================================================
-# 2. RFC 8032 Edwards25519 Digital Signatures (Ed25519)
-# =====================================================================
 
 Q_ED = 2**255 - 19
 L_ED = 2**252 + 27742317777372353535851937790883648493
@@ -150,7 +117,6 @@ def _decode_ed_point(raw: bytes) -> Tuple[int, int]:
     return (x, y)
 
 def generate_ed25519_keypair() -> Tuple[bytes, bytes]:
-    """Generates an Ed25519 signing keypair. Returns (pub_32B, priv_32B)."""
     priv_seed = os.urandom(32)
     h = hashlib.sha512(priv_seed).digest()
     a_scalar = int.from_bytes(h[:32], "little")
@@ -161,7 +127,6 @@ def generate_ed25519_keypair() -> Tuple[bytes, bytes]:
     return pub_bytes, priv_seed
 
 def ed25519_sign(private_bytes: bytes, data: bytes) -> bytes:
-    """Signs arbitrary data using the Ed25519 private seed."""
     h = hashlib.sha512(private_bytes[:32]).digest()
     a_scalar = int.from_bytes(h[:32], "little")
     a_scalar &= (1 << 254) - 8
@@ -178,7 +143,6 @@ def ed25519_sign(private_bytes: bytes, data: bytes) -> bytes:
     return r_bytes + s_scalar.to_bytes(32, "little")
 
 def ed25519_verify(public_bytes: bytes, signature: bytes, data: bytes) -> bool:
-    """Verifies an Ed25519 signature over data."""
     if len(signature) != 64 or len(public_bytes) != 32:
         return False
     try:
@@ -196,13 +160,7 @@ def ed25519_verify(public_bytes: bytes, signature: bytes, data: bytes) -> bool:
     except Exception:
         return False
 
-
-# =====================================================================
-# 3. RFC 2104 HMAC-SHA256 & RFC 5869 HKDF-SHA256
-# =====================================================================
-
 def hmac_sha256(key: bytes, msg: bytes) -> bytes:
-    """RFC 2104 HMAC using SHA-256."""
     block_size = 64
     if len(key) > block_size:
         key = hashlib.sha256(key).digest()
@@ -213,13 +171,11 @@ def hmac_sha256(key: bytes, msg: bytes) -> bytes:
     return hashlib.sha256(o_key_pad + inner).digest()
 
 def hkdf_extract(salt: bytes, ikm: bytes) -> bytes:
-    """HKDF-Extract step."""
     if not salt:
         salt = b"\x00" * 32
     return hmac_sha256(salt, ikm)
 
 def hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
-    """HKDF-Expand step."""
     okm = bytearray()
     t = b""
     counter = 1
@@ -230,14 +186,8 @@ def hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
     return bytes(okm[:length])
 
 def hkdf_extract_and_expand(salt: bytes, ikm: bytes, info: bytes, length: int) -> bytes:
-    """Full HKDF-SHA256 key derivation."""
     prk = hkdf_extract(salt, ikm)
     return hkdf_expand(prk, info, length)
-
-
-# =====================================================================
-# 4. FIPS 197 AES-256 & NIST SP 800-38D AES-GCM Authenticated Cipher
-# =====================================================================
 
 AES_SBOX = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -287,12 +237,10 @@ def _xtime(a: int) -> int:
 
 def _aes_encrypt_block(pt: bytes, round_keys: list) -> bytes:
     state = [[pt[r + 4*c] for c in range(4)] for r in range(4)]
-    # Initial round
     for r in range(4):
         for c in range(4):
             state[r][c] ^= (round_keys[c] >> (24 - 8*r)) & 0xff
 
-    # Rounds 1 to 13
     for rnd in range(1, 14):
         for r in range(4):
             for c in range(4):
@@ -311,7 +259,6 @@ def _aes_encrypt_block(pt: bytes, round_keys: list) -> bytes:
             for c in range(4):
                 state[r][c] ^= (round_keys[rk_idx + c] >> (24 - 8*r)) & 0xff
 
-    # Final round 14
     for r in range(4):
         for c in range(4):
             state[r][c] = AES_SBOX[state[r][c]]
@@ -330,7 +277,6 @@ def _aes_encrypt_block(pt: bytes, round_keys: list) -> bytes:
     return bytes(out)
 
 def _ghash_mult(x_bytes: bytes, y_bytes: bytes) -> bytes:
-    """GF(2^128) field multiplication for GCM authentication."""
     x = int.from_bytes(x_bytes, "big")
     y = int.from_bytes(y_bytes, "big")
     z = 0
@@ -345,7 +291,6 @@ def _ghash_mult(x_bytes: bytes, y_bytes: bytes) -> bytes:
     return z.to_bytes(16, "big")
 
 def _ghash(h_key: bytes, aad: bytes, ct: bytes) -> bytes:
-    """Computes GHASH(H, AAD, CT) over 128-bit blocks."""
     y = b"\x00" * 16
 
     def pad16(data: bytes) -> bytes:
@@ -367,10 +312,6 @@ def _ghash(h_key: bytes, aad: bytes, ct: bytes) -> bytes:
     return _ghash_mult(block, h_key)
 
 def aes_gcm_encrypt(key: bytes, plaintext: bytes, associated_data: bytes = b"") -> Tuple[bytes, bytes]:
-    """
-    Encrypts plaintext with AES-256-GCM.
-    Returns (nonce_12B, ciphertext_with_tag).
-    """
     if len(key) != 32:
         raise ValueError("AES-256 requires 32-byte key")
     round_keys = _key_expansion_256(key)
@@ -378,7 +319,6 @@ def aes_gcm_encrypt(key: bytes, plaintext: bytes, associated_data: bytes = b"") 
     nonce = os.urandom(12)
     j0 = nonce + b"\x00\x00\x00\x01"
 
-    # CTR keystream encryption
     ct = bytearray(len(plaintext))
     cb = int.from_bytes(j0, "big")
     for idx in range(0, len(plaintext), 16):
@@ -389,17 +329,12 @@ def aes_gcm_encrypt(key: bytes, plaintext: bytes, associated_data: bytes = b"") 
             ct[idx + j] = chunk[j] ^ keystream_block[j]
     ciphertext = bytes(ct)
 
-    # Compute GHASH authentication tag
     s = _ghash(h_sub, associated_data, ciphertext)
     e_j0 = _aes_encrypt_block(j0, round_keys)
     tag = bytes(a ^ b for a, b in zip(s, e_j0))
     return nonce, ciphertext + tag
 
 def aes_gcm_decrypt(key: bytes, nonce: bytes, ciphertext_with_tag: bytes, associated_data: bytes = b"") -> bytes:
-    """
-    Decrypts and verifies AES-256-GCM ciphertext.
-    Raises ValueError on authentication tag mismatch.
-    """
     if len(key) != 32:
         raise ValueError("AES-256 requires 32-byte key")
     if len(ciphertext_with_tag) < 16:
@@ -411,14 +346,12 @@ def aes_gcm_decrypt(key: bytes, nonce: bytes, ciphertext_with_tag: bytes, associ
     h_sub = _aes_encrypt_block(b"\x00" * 16, round_keys)
     j0 = nonce + b"\x00\x00\x00\x01"
 
-    # Verify tag in constant time
     s = _ghash(h_sub, associated_data, ciphertext)
     e_j0 = _aes_encrypt_block(j0, round_keys)
     expected_tag = bytes(a ^ b for a, b in zip(s, e_j0))
     if not _constant_time_compare(tag, expected_tag):
         raise ValueError("AES-GCM Authentication Failed: Invalid Tag!")
 
-    # CTR keystream decryption
     pt = bytearray(len(ciphertext))
     cb = int.from_bytes(j0, "big")
     for idx in range(0, len(ciphertext), 16):
@@ -437,11 +370,6 @@ def _constant_time_compare(a: bytes, b: bytes) -> bool:
         diff |= x ^ y
     return diff == 0
 
-
-# =====================================================================
-# 5. Post-Quantum Lattice Key Encapsulation (ML-KEM-768)
-# =====================================================================
-
 import pqcrypto.kem.ml_kem_768 as _kem_backend
 
 KEM_CIPHERTEXT_SIZE = _kem_backend.CIPHERTEXT_SIZE
@@ -450,16 +378,13 @@ KEM_SECRET_KEY_SIZE = _kem_backend.SECRET_KEY_SIZE
 KEM_SHARED_SECRET_SIZE = _kem_backend.SHARED_SECRET_SIZE
 
 def generate_kem_keypair() -> Tuple[bytes, bytes]:
-    """Generates an ML-KEM-768 keypair. Returns (pub_bytes, priv_bytes)."""
     pk, sk = _kem_backend.keygen()
     return bytes(pk), bytes(sk)
 
 def kem_encapsulate(public_bytes: bytes) -> Tuple[bytes, bytes]:
-    """Encapsulates a shared secret using peer's ML-KEM-768 public key."""
     ct, ss = _kem_backend.encaps(public_bytes)
     return bytes(ct), bytes(ss)
 
 def kem_decapsulate(secret_bytes: bytes, ciphertext: bytes) -> bytes:
-    """Decapsulates shared secret using private ML-KEM-768 secret key."""
     ss = _kem_backend.decaps(secret_bytes, ciphertext)
     return bytes(ss)

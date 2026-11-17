@@ -1,6 +1,3 @@
-# client side session manager for my network security assignment
-# handles alice and bob session state, safety numbers and sending msgs
-
 import hashlib
 from typing import Dict, Optional, Tuple, List
 from .primitives import generate_x25519_keypair, generate_kem_keypair
@@ -9,23 +6,17 @@ from .ratchet import PQDoubleRatchetSession
 from .types import PreKeyBundle, EncryptedEnvelope, b64_encode
 
 class PQMessengerClient:
-    # main client class for alice/bob
 
     def __init__(self, username: str):
         self.username = username
         self.pqxdh = PQXDHManager(username)
-        # my active sessions: peer_username -> session object
         self.sessions: Dict[str, PQDoubleRatchetSession] = {}
-        # save decrypted msgs here
         self.message_history: Dict[str, List[dict]] = {}
 
     def get_public_prekey_bundle(self) -> PreKeyBundle:
-        # creates prekey bundle for registration
         return self.pqxdh.create_prekey_bundle()
 
     def get_safety_number(self, peer_username: str, peer_identity_sign_key: bytes, peer_identity_dh_key: bytes) -> str:
-        # calculate 60 digit safety number for verifying against mitm
-        # sort names so both users get the same digits
         u_bytes = self.username.encode('utf-8') + self.pqxdh.identity_keys.sign_public + self.pqxdh.identity_keys.dh_public
         p_bytes = peer_username.encode('utf-8') + peer_identity_sign_key + peer_identity_dh_key
 
@@ -35,7 +26,6 @@ class PQMessengerClient:
             combo = p_bytes + u_bytes
 
         dig = hashlib.sha512(combo).digest()
-        # chunk into 5-digit groups
         chunks = []
         for idx in range(0, 24, 2):
             num = int.from_bytes(dig[idx:idx+2], 'big') % 100000
@@ -43,7 +33,6 @@ class PQMessengerClient:
         return " ".join(chunks)
 
     def start_session_as_alice(self, bob_bundle: PreKeyBundle) -> PQDoubleRatchetSession:
-        # alice starts session with bob bundle
         sk, hdr = self.pqxdh.initiate(bob_bundle)
         sess = PQDoubleRatchetSession(self.username, bob_bundle.username)
         sess.initialize_as_alice(
@@ -56,7 +45,6 @@ class PQMessengerClient:
         return sess
 
     def encrypt_message(self, recipient: str, plaintext: str, bob_bundle_if_first: Optional[PreKeyBundle] = None) -> EncryptedEnvelope:
-        # encrypt outgoing text message
         if recipient not in self.sessions:
             if not bob_bundle_if_first:
                 raise ValueError(f"No existing session for {recipient}; PreKeyBundle required to initiate.")
@@ -69,7 +57,6 @@ class PQMessengerClient:
 
         env = sess.encrypt(plaintext.encode('utf-8'), pqxdh_init=init_hdr)
 
-        # save copy locally
         if recipient not in self.message_history:
             self.message_history[recipient] = []
         self.message_history[recipient].append({
@@ -83,13 +70,11 @@ class PQMessengerClient:
         return env
 
     def receive_envelope(self, envelope: EncryptedEnvelope) -> str:
-        # decrypt incoming packet from peer
         snd = envelope.sender
         if snd not in self.sessions:
             if not envelope.pqxdh_init:
                 raise ValueError(f"Session with {snd} does not exist and no PQXDH init header was attached!")
 
-            # bob computes shared key
             shared_k = self.pqxdh.respond(envelope.pqxdh_init)
             sess = PQDoubleRatchetSession(self.username, snd)
             sess.initialize_as_bob(

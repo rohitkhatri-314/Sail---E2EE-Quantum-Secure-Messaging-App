@@ -1,34 +1,24 @@
-# types and helper structures for assignment project
-# wrote this for network security e2e messaging lab
-
 from dataclasses import dataclass
 from typing import Optional, Dict, List
 import base64
 
-# helper for b64 string
 def b64_encode(data: bytes) -> str:
-    # encode bytes to b64 string
     res = base64.b64encode(data).decode('utf-8')
     return res
 
 def b64_decode(data_str: str) -> bytes:
-    # decode b64 string back to bytes
     res_bytes = base64.b64decode(data_str.encode('utf-8'))
     return res_bytes
 
-
 @dataclass
 class IdentityKeyPair:
-    # long term id keys for alice or bob
-    dh_public: bytes       # x25519 pub key
-    dh_private: bytes      # x25519 priv key
-    sign_public: bytes     # ed25519 pub
-    sign_private: bytes    # ed25519 priv
-
+    dh_public: bytes
+    dh_private: bytes
+    sign_public: bytes
+    sign_private: bytes
 
 @dataclass
 class PreKeyBundle:
-    # prekey bundle that bob uploads to server
     username: str
     identity_dh_key: bytes          
     identity_sign_key: bytes        
@@ -40,7 +30,6 @@ class PreKeyBundle:
     one_time_prekey_kem: bytes      
 
     def to_dict(self) -> dict:
-        # pack to dictionary so json can send it
         temp_dict = {
             "username": self.username,
             "identity_dh_key": b64_encode(self.identity_dh_key),
@@ -56,7 +45,6 @@ class PreKeyBundle:
 
     @classmethod
     def from_dict(cls, d: dict) -> 'PreKeyBundle':
-        # unpack from dict
         bundle_obj = cls(
             username=d["username"],
             identity_dh_key=b64_decode(d["identity_dh_key"]),
@@ -70,10 +58,8 @@ class PreKeyBundle:
         )
         return bundle_obj
 
-
 @dataclass
 class PQXDHInitHeader:
-    # init header alice sends to bob in 1st msg
     alice_identity_dh: bytes         
     alice_identity_sign: bytes       
     alice_ephemeral_dh: bytes        
@@ -104,15 +90,13 @@ class PQXDHInitHeader:
         )
         return h
 
-
 @dataclass
 class RatchetHeader:
-    # current ratchet keys for this packet
     sender_ratchet_dh_pub: bytes     
     sender_ratchet_kem_pub: bytes    
     kem_ciphertext: Optional[bytes]  
-    pn: int                          # previous chain count
-    n: int                           # msg count in current chain
+    pn: int
+    n: int
 
     def to_dict(self) -> dict:
         rh_dict = {
@@ -135,10 +119,8 @@ class RatchetHeader:
         )
         return r
 
-
 @dataclass
 class EncryptedEnvelope:
-    # outer packet that goes over websocket
     sender: str
     recipient: str
     pqxdh_init: Optional[PQXDHInitHeader]

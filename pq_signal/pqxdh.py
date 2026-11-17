@@ -1,6 +1,3 @@
-# pqxdh handshake logic
-# combines x25519 dh with ml-kem-768 for post quantum security
-
 from typing import Tuple, Dict
 from .primitives import (
     generate_x25519_keypair,
@@ -22,12 +19,10 @@ from .types import (
 PQXDH_INFO = b"PQXDH_HYBRID_X25519_ML_KEM_768_V1"
 
 class PQXDHManager:
-    # manager class for prekey bundles and initial handshake
 
     def __init__(self, username: str):
         self.username = username
         
-        # generate identity keys (dh and signing)
         ik_pub, ik_priv = generate_x25519_keypair()
         sig_pub, sig_priv = generate_ed25519_keypair()
         self.identity_keys = IdentityKeyPair(
@@ -37,21 +32,17 @@ class PQXDHManager:
             sign_private=sig_priv,
         )
 
-        # signed prekeys
         self.spk_dh_pub, self.spk_dh_priv = generate_x25519_keypair()
         self.spk_kem_pub, self.spk_kem_priv = generate_kem_keypair()
         
-        # sign spk dh + spk kem using identity sign key
         combined_spk = self.spk_dh_pub + self.spk_kem_pub
         self.spk_signature = ed25519_sign(self.identity_keys.sign_private, combined_spk)
 
-        # one-time prekeys pool
         self.one_time_prekeys: Dict[int, Tuple[bytes, bytes, bytes, bytes]] = {}
         self._next_opk_id = 1
         self.generate_one_time_prekeys(count=10)
 
     def generate_one_time_prekeys(self, count: int = 10):
-        # generate a batch of one time prekeys
         for _ in range(count):
             o_dh_pub, o_dh_priv = generate_x25519_keypair()
             o_kem_pub, o_kem_priv = generate_kem_keypair()
@@ -61,7 +52,6 @@ class PQXDHManager:
             self._next_opk_id += 1
 
     def create_prekey_bundle(self) -> PreKeyBundle:
-        # package up public bundle to send to server
         if not self.one_time_prekeys:
             self.generate_one_time_prekeys(count=5)
         
@@ -81,28 +71,22 @@ class PQXDHManager:
         )
 
     def initiate(self, bob_bundle: PreKeyBundle) -> Tuple[bytes, PQXDHInitHeader]:
-        # alice initiates handshake with bob bundle
         
-        # 1. check signature on bob's signed prekey
         to_verify = bob_bundle.signed_prekey_dh + bob_bundle.signed_prekey_kem
         ok = ed25519_verify(bob_bundle.identity_sign_key, bob_bundle.signed_prekey_sig, to_verify)
         if not ok:
             raise ValueError("PQXDH Handshake Error: Bob's Signed Prekey signature is invalid!")
 
-        # 2. alice generates ephemeral keypair
         ek_pub, ek_priv = generate_x25519_keypair()
 
-        # 3. kem encapsulations
         kem_c1, kem_s1 = kem_encapsulate(bob_bundle.signed_prekey_kem)
         kem_c2, kem_s2 = kem_encapsulate(bob_bundle.one_time_prekey_kem)
 
-        # 4. four diffie hellman operations
         dh1 = x25519_diffie_hellman(self.identity_keys.dh_private, bob_bundle.signed_prekey_dh)
         dh2 = x25519_diffie_hellman(ek_priv, bob_bundle.identity_dh_key)
         dh3 = x25519_diffie_hellman(ek_priv, bob_bundle.signed_prekey_dh)
         dh4 = x25519_diffie_hellman(ek_priv, bob_bundle.one_time_prekey_dh)
 
-        # 5. combine everything with hkdf
         all_secrets = dh1 + dh2 + dh3 + dh4 + kem_s1 + kem_s2
         master_secret = hkdf_extract_and_expand(
             salt=b"\x00" * 32,
@@ -123,24 +107,20 @@ class PQXDHManager:
         return master_secret, init_hdr
 
     def respond(self, init_header: PQXDHInitHeader) -> bytes:
-        # bob computes the same master secret
         opk_idx = init_header.one_time_prekey_id
         if opk_idx not in self.one_time_prekeys:
             raise ValueError(f"PQXDH Response Error: OPK with ID {opk_idx} not found or already consumed!")
 
         opk_dh_pub, opk_dh_priv, opk_kem_pub, opk_kem_priv = self.one_time_prekeys.pop(opk_idx)
 
-        # 1. kem decapsulations
         kem_s1 = kem_decapsulate(self.spk_kem_priv, init_header.kem_ct_signed_prekey)
         kem_s2 = kem_decapsulate(opk_kem_priv, init_header.kem_ct_one_time_prekey)
 
-        # 2. matching dh operations
         dh1 = x25519_diffie_hellman(self.spk_dh_priv, init_header.alice_identity_dh)
         dh2 = x25519_diffie_hellman(self.identity_keys.dh_private, init_header.alice_ephemeral_dh)
         dh3 = x25519_diffie_hellman(self.spk_dh_priv, init_header.alice_ephemeral_dh)
         dh4 = x25519_diffie_hellman(opk_dh_priv, init_header.alice_ephemeral_dh)
 
-        # 3. combine with hkdf
         all_secrets = dh1 + dh2 + dh3 + dh4 + kem_s1 + kem_s2
         master_secret = hkdf_extract_and_expand(
             salt=b"\x00" * 32,

@@ -1,6 +1,3 @@
-# double ratchet implementation
-# symmetric kdf chains + asymmetric dh/kem ratchet steps
-
 from typing import Optional, Tuple, Dict
 from .primitives import (
     generate_x25519_keypair,
@@ -20,35 +17,29 @@ KDF_MK_INFO = b"PQ_DOUBLE_RATCHET_MESSAGE_KEY"
 MAX_SKIP = 1000
 
 class PQDoubleRatchetSession:
-    # keeps state for ongoing conversation
 
     def __init__(self, username: str, peer_username: str):
         self.username = username
         self.peer_username = peer_username
 
-        # keys
-        self.rk: Optional[bytes] = None        # root key
-        self.cks: Optional[bytes] = None       # send chain key
-        self.ckr: Optional[bytes] = None       # recv chain key
+        self.rk: Optional[bytes] = None
+        self.cks: Optional[bytes] = None
+        self.ckr: Optional[bytes] = None
 
-        # my ratchet keys
         self.dhs_pub: Optional[bytes] = None   
         self.dhs_priv: Optional[bytes] = None  
         self.kems_pub: Optional[bytes] = None  
         self.kems_priv: Optional[bytes] = None 
 
-        # peer ratchet keys
         self.dhr_pub: Optional[bytes] = None   
         self.kemr_pub: Optional[bytes] = None  
 
         self.pending_kem_ct: Optional[bytes] = None
 
-        # message counters
-        self.ns: int = 0                       # sent count
-        self.nr: int = 0                       # recv count
-        self.pn: int = 0                       # prev count
+        self.ns: int = 0
+        self.nr: int = 0
+        self.pn: int = 0
 
-        # out of order keys dictionary
         self.skipped_message_keys: Dict[Tuple[bytes, int], bytes] = {}
 
         self.ratchet_turn_count: int = 0
@@ -64,18 +55,15 @@ class PQDoubleRatchetSession:
         })
 
     def initialize_as_alice(self, shared_master_key: bytes, bob_ratchet_dh_pub: bytes, bob_ratchet_kem_pub: bytes):
-        # setup alice session after handshake
         self.dhs_pub, self.dhs_priv = generate_x25519_keypair()
         self.kems_pub, self.kems_priv = generate_kem_keypair()
         self.dhr_pub = bob_ratchet_dh_pub
         self.kemr_pub = bob_ratchet_kem_pub
 
-        # first asymmetric step
         dh_out = x25519_diffie_hellman(self.dhs_priv, self.dhr_pub)
         k_ct, k_ss = kem_encapsulate(self.kemr_pub)
         self.pending_kem_ct = k_ct
 
-        # derive root key and send chain
         combo = dh_out + k_ss
         out_keys = hkdf_extract_and_expand(salt=shared_master_key, ikm=combo, info=KDF_RK_INFO, length=64)
         self.rk = out_keys[:32]
@@ -89,7 +77,6 @@ class PQDoubleRatchetSession:
 
     def initialize_as_bob(self, shared_master_key: bytes, bob_ratchet_dh_priv: bytes, bob_ratchet_dh_pub: bytes,
                           bob_ratchet_kem_priv: bytes, bob_ratchet_kem_pub: bytes):
-        # setup bob session
         self.rk = shared_master_key
         self.dhs_priv = bob_ratchet_dh_priv
         self.dhs_pub = bob_ratchet_dh_pub
@@ -105,13 +92,11 @@ class PQDoubleRatchetSession:
         self._log_event("Bob Init", "Initialized with Root Key; waiting for Alice's first message.")
 
     def _symmetric_step(self, chain_key: bytes) -> Tuple[bytes, bytes]:
-        # step chain key forward by 1
         mk = hkdf_extract_and_expand(salt=chain_key, ikm=b"\x01", info=KDF_MK_INFO, length=32)
         next_ck = hkdf_extract_and_expand(salt=chain_key, ikm=b"\x02", info=KDF_CK_INFO, length=32)
         return next_ck, mk
 
     def _asymmetric_ratchet_step(self, header: RatchetHeader):
-        # do asymmetric ratchet step when peer sends new key
         self.pn = self.ns
         self.ns = 0
         self.nr = 0
@@ -121,28 +106,22 @@ class PQDoubleRatchetSession:
         if header.kem_ciphertext is None:
             raise ValueError("Protocol Error: Missing KEM ciphertext in asymmetric ratchet turn!")
         
-        # 1. decapsulate received kem
         rec_kem_ss = kem_decapsulate(self.kems_priv, header.kem_ciphertext)
 
-        # 2. compute dh
         rec_dh = x25519_diffie_hellman(self.dhs_priv, self.dhr_pub)
 
-        # 3. advance root key for receiving
         combo_rec = rec_dh + rec_kem_ss
         d_rec = hkdf_extract_and_expand(salt=self.rk, ikm=combo_rec, info=KDF_RK_INFO, length=64)
         self.rk = d_rec[:32]
         self.ckr = d_rec[32:]
 
-        # 4. make fresh keys for sending
         self.dhs_pub, self.dhs_priv = generate_x25519_keypair()
         self.kems_pub, self.kems_priv = generate_kem_keypair()
 
-        # 5. compute dh and kem for sending
         send_dh = x25519_diffie_hellman(self.dhs_priv, self.dhr_pub)
         s_ct, s_ss = kem_encapsulate(self.kemr_pub)
         self.pending_kem_ct = s_ct
 
-        # 6. advance root key for sending
         combo_send = send_dh + s_ss
         d_send = hkdf_extract_and_expand(salt=self.rk, ikm=combo_send, info=KDF_RK_INFO, length=64)
         self.rk = d_send[:32]
@@ -155,7 +134,6 @@ class PQDoubleRatchetSession:
         )
 
     def _skip_message_keys(self, until: int):
-        # save skipped message keys
         if self.nr + MAX_SKIP < until:
             raise ValueError("Too many skipped messages; exceeds MAX_SKIP threshold")
         if self.ckr is not None:
@@ -165,7 +143,6 @@ class PQDoubleRatchetSession:
                 self.nr += 1
 
     def encrypt(self, plaintext: bytes, pqxdh_init: Optional[PQXDHInitHeader] = None) -> EncryptedEnvelope:
-        # encrypt outgoing message
         if self.cks is None:
             raise ValueError("Session Error: Sending chain key is not initialized!")
 
@@ -180,7 +157,6 @@ class PQDoubleRatchetSession:
         self.pending_kem_ct = None
         self.ns += 1
 
-        # bind header as associated data
         aad = hdr.sender_ratchet_dh_pub + hdr.sender_ratchet_kem_pub + hdr.n.to_bytes(4, 'big')
         iv, cipher_text = aes_gcm_encrypt(msg_key, plaintext, associated_data=aad)
 
@@ -196,10 +172,8 @@ class PQDoubleRatchetSession:
         )
 
     def decrypt(self, envelope: EncryptedEnvelope) -> bytes:
-        # decrypt received envelope
         hdr = envelope.ratchet_header
 
-        # check skipped keys first
         k_tuple = (hdr.sender_ratchet_dh_pub, hdr.n)
         if k_tuple in self.skipped_message_keys:
             msg_key = self.skipped_message_keys.pop(k_tuple)
@@ -208,15 +182,12 @@ class PQDoubleRatchetSession:
             self._log_event("Decrypted (Skipped Key)", f"Decrypted out-of-order message #{hdr.n}")
             return pt
 
-        # asymmetric turn if sender dh changed
         if hdr.sender_ratchet_dh_pub != self.dhr_pub:
             self._skip_message_keys(hdr.pn)
             self._asymmetric_ratchet_step(hdr)
 
-        # skip missed messages in chain
         self._skip_message_keys(hdr.n)
 
-        # advance chain
         self.ckr, msg_key = self._symmetric_step(self.ckr)
         self.nr += 1
 
