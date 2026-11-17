@@ -138,7 +138,7 @@ async function loadContacts() {
     if (!localMessages[peer]) localMessages[peer] = [];
     const el = document.createElement("div");
     el.id = `contact-${peer}`;
-    el.className = "flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-gray-50 border-b border-gray-100 transition";
+    el.className = "flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-violet-50 border-b border-slate-100 transition";
     el.onclick = () => openConversation(peer);
 
     const prev = previews[peer];
@@ -147,17 +147,17 @@ async function loadContacts() {
     const unread = unreadCounts[peer] || 0;
 
     el.innerHTML = `
-      <div class="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-lg uppercase shrink-0">
+      <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-500 flex items-center justify-center text-white font-bold text-lg uppercase shrink-0 shadow-sm shadow-violet-200">
         ${peer[0]}
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex justify-between items-center">
-          <span class="font-semibold text-sm text-gray-800">${capitalize(peer)}</span>
-          <span class="text-[11px] text-gray-400 contact-ts" id="ts-${peer}">${prevTs}</span>
+          <span class="font-semibold text-sm text-slate-800">${capitalize(peer)}</span>
+          <span class="text-[11px] text-slate-400 contact-ts" id="ts-${peer}">${prevTs}</span>
         </div>
         <div class="flex justify-between items-center mt-0.5">
-          <div class="text-xs text-gray-400 truncate contact-preview" id="preview-${peer}">${prevText.length > 35 ? escHtml(prevText.slice(0, 35)) + "…" : escHtml(prevText)}</div>
-          <span id="badge-${peer}" class="${unread > 0 ? "" : "hidden"} ml-2 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">${unread}</span>
+          <div class="text-xs text-slate-400 truncate contact-preview" id="preview-${peer}">${prevText.length > 35 ? escHtml(prevText.slice(0, 35)) + "…" : escHtml(prevText)}</div>
+          <span id="badge-${peer}" class="${unread > 0 ? "" : "hidden"} ml-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">${unread}</span>
         </div>
       </div>
     `;
@@ -192,10 +192,10 @@ async function openConversation(peer) {
 
   // Update sidebar highlight
   document.querySelectorAll("#contact-list > div").forEach(el => {
-    el.classList.remove("bg-gray-100");
+    el.classList.remove("bg-violet-100", "border-violet-200");
   });
   const contactEl = document.getElementById(`contact-${peer}`);
-  if (contactEl) contactEl.classList.add("bg-gray-100");
+  if (contactEl) contactEl.classList.add("bg-violet-50", "border-violet-200");
 
   document.getElementById("empty-state").classList.add("hidden");
   document.getElementById("active-chat").classList.remove("hidden");
@@ -238,14 +238,14 @@ function appendBubble(msg) {
   const bubble = document.createElement("div");
   bubble.className = `msg-bubble px-3.5 py-2 rounded-2xl text-sm shadow-sm ${
     isMe
-      ? "bg-[#dcf8c6] text-gray-800 rounded-tr-sm"
-      : "bg-white text-gray-800 rounded-tl-sm"
+      ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-tr-sm shadow-violet-100"
+      : "bg-white text-slate-800 rounded-tl-sm border border-violet-100/60"
   }`;
 
   bubble.innerHTML = `
     <div class="leading-snug">${escHtml(msg.text)}</div>
     <div class="flex items-center justify-end gap-1 mt-0.5">
-      <span class="text-[10px] text-gray-400">${formatTime(msg.ts)}</span>
+      <span class="text-[10px] ${isMe ? "text-violet-200" : "text-slate-400"}">${formatTime(msg.ts)}</span>
       ${isMe ? statusIcon(msg.status) : ""}
     </div>
   `;
@@ -257,10 +257,10 @@ function appendBubble(msg) {
 
 function statusIcon(status) {
   if (status === "sending") {
-    return `<svg class="w-3.5 h-3.5 text-gray-300" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+    return `<svg class="w-3.5 h-3.5 text-violet-300" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
   }
-  // delivered / read: double tick in blue
-  return `<svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M18 7l-1.41-1.42-6.34 6.34 1.41 1.41L18 7zm4.24-1.42L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.42zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>`;
+  // delivered / read: double tick in light violet
+  return `<svg class="w-4 h-4 text-violet-200" fill="currentColor" viewBox="0 0 24 24"><path d="M18 7l-1.41-1.42-6.34 6.34 1.41 1.41L18 7zm4.24-1.42L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.42zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>`;
 }
 
 // ─── Send ─────────────────────────────────────────────────────────────────────
