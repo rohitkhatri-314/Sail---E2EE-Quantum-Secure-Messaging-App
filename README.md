@@ -6,7 +6,15 @@ A full-featured end-to-end encrypted messaging application implementing a **cust
 
 ## 1. Cryptographic Architecture (Written From Scratch)
 
-Standard Signal Protocol relies on classical Curve25519 (X25519) Diffie-Hellman, which is vulnerable to Shor's algorithm on a Cryptographically Relevant Quantum Computer (CRQC). **Sail** upgrades the protocol to a **Hybrid Post-Quantum construction** without using any high-level protocol libraries (`libsignal`, etc.):
+All base cryptographic algorithms and protocol state machines are written **from scratch by hand** directly from their mathematical and RFC specifications:
+  - **Montgomery Curve25519 Diffie-Hellman** (`RFC 7748`): Montgomery ladder point doubling and differential addition over GF(2^255 - 19) with RFC bit clamping.
+  - **Edwards25519 Digital Signatures** (`RFC 8032`): Twisted Edwards curve addition, scalar multiplication, point compression, and SHA-512 based signing/verification.
+  - **HMAC-SHA256 & HKDF-SHA256** (`RFC 2104` / `RFC 5869`): Pure Python inner/outer key padding and expansion for root and chain keys.
+  - **AES-256-GCM Authenticated Encryption** (`FIPS 197` / `NIST SP 800-38D`): 14-round AES-256 block cipher with SubBytes, ShiftRows, MixColumns, AddRoundKey, CTR keystream, and GF(2^128) GHASH authentication tag verification.
+  - **PQXDH Handshake State Machine**: 4-way classical DH + dual Post-Quantum KEM encapsulation into a hybrid master key.
+  - **PQ-Double Ratchet Engine**: Asymmetric DH + KEM turn ratchets, symmetric KDF message chains, and skipped message key handling.
+
+**Zero high-level cryptographic frameworks or protocol libraries (`libsignal`, `cryptography`, etc.) are used for protocol or algorithm logic.** Only standard Python built-ins (`hashlib`, `os.urandom`) and the low-level NIST ML-KEM reference primitive are utilized.
 
 ```
 +-----------------------------------------------------------------------------+
