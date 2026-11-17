@@ -195,6 +195,12 @@ async function loadContacts() {
     `;
     list.appendChild(el);
   });
+
+  // Automatically open the first contact if no conversation is currently active
+  if (users.length > 0) {
+    const targetPeer = (currentPeer && users.includes(currentPeer)) ? currentPeer : users[0];
+    await openConversation(targetPeer);
+  }
 }
 
 function filterContacts(query) {
@@ -261,7 +267,11 @@ async function openConversation(peer) {
 
   renderMessages(peer);
   const input = document.getElementById("msg-input");
-  if (input) input.focus();
+  if (input) {
+    input.focus();
+    const container = document.getElementById("messages");
+    if (container) container.scrollTop = container.scrollHeight;
+  }
 }
 
 // ─── Render message list ───────────────────────────────────────────────────────
@@ -279,22 +289,16 @@ function appendBubble(msg) {
   const isMe = msg.sender === currentUser;
 
   const wrapper = document.createElement("div");
-  wrapper.className = `flex ${isMe ? "justify-end" : "justify-start"} mb-1 ${isMe ? "bubble-sent" : "bubble-recv"}`;
+  wrapper.className = `flex ${isMe ? "justify-end" : "justify-start"} mb-1.5 ${isMe ? "bubble-sent" : "bubble-recv"}`;
 
   const bubble = document.createElement("div");
-  bubble.className = `msg-bubble px-4 py-2.5 rounded-2xl text-sm ${
+  bubble.className = `msg-bubble px-4 py-2 rounded-2xl text-sm ${
     isMe
-      ? "bubble-sent-inner text-white rounded-br-sm"
-      : "bubble-recv-inner text-slate-800 rounded-bl-sm"
+      ? "bubble-sent-inner text-white rounded-br-sm shadow-md"
+      : "bubble-recv-inner text-slate-800 rounded-bl-sm shadow-sm"
   }`;
 
-  bubble.innerHTML = `
-    <div class="leading-relaxed select-text">${escHtml(msg.text)}</div>
-    <div class="flex items-center justify-end gap-1.5 mt-1 select-none">
-      <span class="text-[10px] ${isMe ? "text-purple-200/80 font-light" : "text-slate-400 font-light"}">${formatTime(msg.ts)}</span>
-      ${isMe ? statusIcon(msg.status) : ""}
-    </div>
-  `;
+  bubble.innerHTML = `<div class="leading-relaxed select-text whitespace-pre-wrap">${escHtml(msg.text)}</div><div class="flex items-center justify-end gap-1.5 mt-0.5 select-none"><span class="text-[10px] ${isMe ? "text-purple-200/80 font-light" : "text-slate-400 font-light"}">${formatTime(msg.ts)}</span>${isMe ? statusIcon(msg.status) : ""}</div>`;
 
   wrapper.appendChild(bubble);
   container.appendChild(wrapper);
